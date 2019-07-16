@@ -48,9 +48,9 @@ class Launcher(tkinter.Tk):
     def __init__(self, screenName=None, baseName=None, className='Tk', useTk=1, sync=0, use=None):
         super().__init__(screenName, baseName, className, useTk, sync, use)
 
-        self.title('LibrationPoints Launcher')
-        self.geometry('350x180')
-        self.minsize(350, 180)
+        self.title('Libration Points Calculator launcher')
+        self.geometry('370x200')
+        self.minsize(370, 200)
 
         calc_types = {a.value: a for a in CalcTypes}
         calc_points_range = range(constants.MIN_CALC_POINTS_COUNT, constants.MAX_CALC_POINTS_COUNT + 1)
@@ -79,24 +79,29 @@ class Launcher(tkinter.Tk):
         combobox_eps.current(6)
         combobox_eps.grid(row=2, column=1, padx=5, pady=5, sticky=tkinter.W)
 
-        chk_state = tkinter.BooleanVar()
-        chk_state.set(False)
-        checkbutton = ttk.Checkbutton(frame, text='Enable time logging', variable=chk_state)
-        checkbutton.grid(row=3, column=1, padx=5, pady=5, sticky=tkinter.W)
+        chk_time = tkinter.BooleanVar()
+        chk_time.set(False)
+        checkbutton_time = ttk.Checkbutton(frame, text='Enable time logging', variable=chk_time)
+        checkbutton_time.grid(row=3, column=1, padx=5, pady=5, sticky=tkinter.W)
+
+        chk_extended = tkinter.BooleanVar()
+        chk_extended.set(True)
+        checkbutton_ext = ttk.Checkbutton(frame, text='Draw extended graphs', variable=chk_extended)
+        checkbutton_ext.grid(row=4, column=1, padx=5, pady=5, sticky=tkinter.W)
 
         def handle_button_click():
             try:
                 i = int(points_count_var.get())
                 if i in calc_points_range:
                     calculate_and_show(calc_types.get(combobox_method.get()), i,
-                                       constants.EPSILONS.get(combobox_eps.get()), chk_state.get())
+                                       constants.EPSILONS.get(combobox_eps.get()), chk_time.get(), chk_extended.get())
                 else:
                     points_count_var.set(str(constants.DEFAULT_CALC_POINTS_COUNT))
             except ValueError:
                 points_count_var.set(str(constants.DEFAULT_CALC_POINTS_COUNT))
 
         button = ttk.Button(frame, text='Start', command=handle_button_click)
-        button.grid(row=4, column=1, padx=5, pady=5, sticky=tkinter.E)
+        button.grid(row=5, column=1, padx=5, pady=5, sticky=tkinter.E)
 
 
 class ResultWindow(tkinter.Tk):
@@ -145,7 +150,7 @@ class ResultWindow(tkinter.Tk):
         axes = fig.add_subplot(111)
         axes.plot(list_x, list_y)
         axes.grid()
-        axes.set_xlabel('alpha')
+        axes.set_xlabel('α')
         axes.set_ylabel('y', rotation=0)
 
         graph = FigureCanvasTkAgg(fig, master=frame)
@@ -161,13 +166,14 @@ class ResultWindow(tkinter.Tk):
 
 def calculate_and_show(calc_type: CalcTypes,
                        points_count: int = constants.DEFAULT_CALC_POINTS_COUNT, eps: float = 1e-7,
-                       time_logging: bool = False):
-    ResultWindow(calc_type, eps, calculate_data_dicts(calc_type, points_count, eps, time_logging)).mainloop()
+                       time_logging: bool = False, extended_graphs: bool = False):
+    ResultWindow(calc_type, eps, calculate_data_dicts(calc_type, points_count, eps, time_logging,
+                                                      extended_graphs)).mainloop()
 
 
 def calculate_data_dicts(calc_type: CalcTypes,
                          points_count: int = constants.DEFAULT_CALC_POINTS_COUNT, eps: float = 1e-7,
-                         time_logging: bool = False):
+                         time_logging: bool = False, extended_graphs: bool = False):
     if points_count not in range(constants.MIN_CALC_POINTS_COUNT, constants.MAX_CALC_POINTS_COUNT + 1):
         print('calculate_data_dicts: Points count out of allowed range (must be from {:d} to {:d})'.format(
             constants.MIN_CALC_POINTS_COUNT, constants.MAX_CALC_POINTS_COUNT
@@ -177,8 +183,12 @@ def calculate_data_dicts(calc_type: CalcTypes,
 
     answer = []
 
-    l, r = 0.0, 0.5
-    delta = (r - l) / (points_count - 1)
+    left_border = 0.0
+    if extended_graphs:
+        right_border = 1.0
+    else:
+        right_border = 0.5
+    delta = (right_border - left_border) / (points_count - 1)
 
     # ----------------------------L1------------------------------
 
@@ -188,23 +198,34 @@ def calculate_data_dicts(calc_type: CalcTypes,
     def f1_p(y: float, alpha: float) -> float:
         return 1 + ((2 * (1 - alpha)) / ((alpha - y) ** 3)) + ((2 * alpha) / (((1 - alpha) + y) ** 3))
 
-    ans1 = {0.0: -1}
-    a = 0.0
+    ans1 = {left_border: -1}
+    a = left_border
     y_last = -1
     if calc_type == CalcTypes.NEWTON:
         with TimeProfiler(time_logging, 'Calculating L1 location by {} method ({:d} points, eps = {:g})'.format(
                 calc_type.value, points_count, eps)):
-            for i in range(points_count - 1):
+            for i in range(points_count - 2):
                 a += delta
                 y_last = find_root_newton(f1, f1_p, y_last, a, eps)
                 ans1[a] = y_last
+
+            if extended_graphs:
+                ans1[right_border] = 1
+            else:
+                ans1[right_border] = find_root_newton(f1, f1_p, y_last, right_border, eps)  # 0
+
     elif calc_type == CalcTypes.DICHOTOMY:
         with TimeProfiler(time_logging, 'Calculating L1 location by {} method ({:d} points, eps = {:g})'.format(
                 calc_type.value, points_count, eps)):
-            for i in range(points_count - 1):
+            for i in range(points_count - 2):
                 a += delta
-                y_last = find_root_dichotomy(f1, -1, 0, a, eps)
+                y_last = find_root_dichotomy(f1, -1, 1, a, eps)
                 ans1[a] = y_last
+
+            if extended_graphs:
+                ans1[right_border] = 1
+            else:
+                ans1[right_border] = 0  # find_root_dichotomy(f1, -1, 1, right_border, eps)
 
     answer.append(ans1)
 
@@ -216,23 +237,28 @@ def calculate_data_dicts(calc_type: CalcTypes,
     def f2_p(y: float, alpha: float) -> float:
         return 1 + ((2 * (1 - alpha)) / ((alpha - y) ** 3)) - ((2 * alpha) / (((1 - alpha) + y) ** 3))
 
-    ans2 = {0.0: -1}
-    a = 0.0
+    ans2 = {left_border: -1}
+    a = left_border
     y_last = -1
     if calc_type == CalcTypes.NEWTON:
         with TimeProfiler(time_logging, 'Calculating L2 location by {} method ({:d} points, eps = {:g})'.format(
                 calc_type.value, points_count, eps)):
-            for i in range(points_count - 1):
+            for i in range(points_count - 2):
                 a += delta
                 y_last = find_root_newton(f2, f2_p, y_last, a, eps)
                 ans2[a] = y_last
+
+            ans2[right_border] = find_root_newton(f2, f2_p, y_last, right_border, eps)
+
     elif calc_type == CalcTypes.DICHOTOMY:
         with TimeProfiler(time_logging, 'Calculating L2 location by {} method ({:d} points, eps = {:g})'.format(
                 calc_type.value, points_count, eps)):
-            for i in range(points_count - 1):
+            for i in range(points_count - 2):
                 a += delta
                 y_last = find_root_dichotomy(f2, -1.5, -1, a, eps)
                 ans2[a] = y_last
+
+            ans2[right_border] = find_root_dichotomy(f2, -1.5, -1, right_border, eps)
 
     answer.append(ans2)
 
@@ -244,23 +270,34 @@ def calculate_data_dicts(calc_type: CalcTypes,
     def f3_p(y: float, alpha: float) -> float:
         return 1 - ((2 * (1 - alpha)) / ((alpha - y) ** 3)) + ((2 * alpha) / (((1 - alpha) + y) ** 3))
 
-    ans3 = {0.0: 1}
-    a = 0.0
+    ans3 = {left_border: 1}
+    a = left_border
     y_last = 1
     if calc_type == CalcTypes.NEWTON:
         with TimeProfiler(time_logging, 'Calculating L3 location by {} method ({:d} points, eps = {:g})'.format(
                 calc_type.value, points_count, eps)):
-            for i in range(points_count - 1):
+            for i in range(points_count - 2):
                 a += delta
                 y_last = find_root_newton(f3, f3_p, y_last, a, eps)
                 ans3[a] = y_last
+
+            if extended_graphs:
+                ans3[right_border] = 1
+            else:
+                ans3[right_border] = find_root_newton(f3, f3_p, y_last, right_border, eps)
+
     elif calc_type == CalcTypes.DICHOTOMY:
         with TimeProfiler(time_logging, 'Calculating L3 location by {} method ({:d} points, eps = {:g})'.format(
                 calc_type.value, points_count, eps)):
-            for i in range(points_count - 1):
+            for i in range(points_count - 2):
                 a += delta
                 y_last = find_root_dichotomy(f3, 1, 1.5, a, eps)
                 ans3[a] = y_last
+
+            if extended_graphs:
+                ans3[right_border] = 1
+            else:
+                ans3[right_border] = find_root_dichotomy(f3, 1, 1.5, right_border, eps)
 
     answer.append(ans3)
 
