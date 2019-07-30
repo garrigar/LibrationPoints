@@ -343,5 +343,9 @@ def find_root_newton(f: Callable[[float, float], float], f_prime: Callable[[floa
     return x
 
 
-if __name__ == "__main__":
+def launch():
     Launcher().mainloop()
+
+
+if __name__ == "__main__":
+    launch()
